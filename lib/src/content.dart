@@ -17,9 +17,11 @@ import 'content/stage/town.dart';
 import 'content/tiles.dart';
 import 'engine.dart';
 
+// 游戏核心的工厂函数, 初始化各个组件然后返回内容
 Content createContent() {
   // Note: The order is significant here. For example, monster drops will
   // reference items, which need to have already been created.
+  // 这里都是静态单例
   Items.initialize();
   Monsters.initialize();
   Affixes.initialize();

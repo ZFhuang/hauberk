@@ -31,8 +31,10 @@ class TerminalFont {
 }
 
 void main() {
+  // 游戏核心
   var content = createContent();
 
+  // 下面都是UI和Control之类的东西
   _addFont("8x8", 8);
   _addFont("8x10", 8, 10);
   _addFont("9x12", 9, 12);

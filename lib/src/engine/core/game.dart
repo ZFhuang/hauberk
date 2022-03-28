@@ -19,8 +19,10 @@ import 'element.dart';
 import 'energy.dart';
 import 'log.dart';
 
+// 整个引擎的基类, 也是整个运行中的游戏本身
 /// Root class for the game engine. All game state is contained within this.
 class Game {
+  // <?> 游戏本身的内容(是画面么)
   final Content content;
 
   final HeroSave _save;
@@ -79,18 +81,25 @@ class Game {
     _stage.refreshView();
   }
 
+  // 游戏主循环在此
   GameResult update() {
     var madeProgress = false;
 
+    // <?> 这个外层循环用来干什么
     while (true) {
       // Process any ongoing or pending actions.
+      // 当前所有需要处理的actions从队列中诸葛取出
       while (_actions.isNotEmpty) {
         var action = _actions.first;
 
+        // 执行对应的操作, 这个perform使得action与引擎解耦
+        // result标志了这个action执行结果, 其中alternative代表执行失败但是有替代品
         var result = action.perform();
 
         // Cascade through the alternates until we hit bottom.
+        // 用返回的替代action代替当前的action然后再执行一次
         while (result.alternative != null) {
+          // 方法是将当前的action弹出然后将新的加入并调用
           _actions.removeFirst();
           action = result.alternative!;
           _actions.addFirst(action);
@@ -98,6 +107,8 @@ class Game {
           result = action.perform();
         }
 
+        // 执行所有的对应的reaction
+        // reaction在立即形式的action执行后压入
         while (_reactions.isNotEmpty) {
           var reaction = _reactions.removeLast();
           var result = reaction.perform();
@@ -111,9 +122,12 @@ class Game {
           assert(result.succeeded, "Reactions should never fail.");
         }
 
+        // <?> action后刷新当前场景点亮的部分
         stage.refreshView();
+        // 标记进行了实际的操作以供UI更新
         madeProgress = true;
 
+        // 若action执行完成了, 则删掉这个action
         if (result.done) {
           _actions.removeFirst();
 
@@ -123,12 +137,15 @@ class Game {
           }
 
           // Refresh every time the hero takes a turn.
+          // 当遍历到hero的时候需要将当前的结果提交给UI, 因此hero是最后一个处理的actor
           if (action.actor == hero) return makeResult(madeProgress);
         }
 
+        // <?> _events是啥时候压入的
         if (_events.isNotEmpty) return makeResult(madeProgress);
       }
 
+      // <?> 子实体是什么
       // If we are in the middle of updating substances, keep working through
       // them.
       if (_substanceIndex != null) {
@@ -137,27 +154,33 @@ class Game {
 
       // If we get here, all pending actions are done, so advance to the next
       // tick until an actor moves.
+      // 处理完所有之前的action后, 开始更新actor的状态
       while (_actions.isEmpty) {
         var actor = stage.currentActor;
 
+        // Input在等待的话不做UI处理除非有action被执行
         // If we are still waiting for input for the actor, just return (again).
         if (actor.energy.canTakeTurn && actor.needsInput) {
           return makeResult(madeProgress);
         }
 
+        // 速度条的判断
         if (actor.energy.canTakeTurn || actor.energy.gain(actor.speed)) {
+          // 当速度条和回合条都到了, 意味着轮到这个actor的回合了
           // If the actor can move now, but needs input from the user, just
           // return so we can wait for it.
           if (actor.needsInput) return makeResult(madeProgress);
-
+          // 当有输入的时候, 这个actor的行为是为一个action, 从actor身上取出压入队列
           _actions.add(actor.getAction());
         } else {
+          // 否则让速度条前进即可
           // This actor doesn't have enough energy yet, so move on to the next.
           stage.advanceActor();
         }
 
         // Each time we wrap around, process "idle" things that are ongoing and
         // speed independent.
+        // <?> 是hero时, 设置实体能量积攒并刷新
         if (actor == hero) {
           if (_substanceEnergy.gain(Energy.normalSpeed)) {
             _substanceEnergy.spend();
@@ -170,6 +193,7 @@ class Game {
     }
   }
 
+  // action分为两类, 直接产生效果的action会有reaction
   void addAction(Action action) {
     if (action.isImmediate) {
       _reactions.add(action);
@@ -178,6 +202,8 @@ class Game {
     }
   }
 
+  // 在这里压入action对应的事件
+  // <?> 给其他action调用的?
   void addEvent(EventType type,
       {Actor? actor,
       Element? element,
@@ -187,6 +213,7 @@ class Game {
     _events.add(Event(type, actor, element ?? Element.none, pos, dir, other));
   }
 
+  // 将当前的所有事件压入result并用于返回
   GameResult makeResult(bool madeProgress) {
     var result = GameResult(madeProgress);
     result.events.addAll(_events);
@@ -194,6 +221,7 @@ class Game {
     return result;
   }
 
+  //
   void _updateSubstances() {
     while (_substanceIndex! < _substanceUpdateOrder.length) {
       var pos = _substanceUpdateOrder[_substanceIndex!];
@@ -232,6 +260,7 @@ class Game {
 
 /// Defines the actual content for the game: the breeds, items, etc. that
 /// define the play experience.
+/// 引擎核心抽象类
 abstract class Content {
   // TODO: Temp. Figure out where dungeon generator lives.
   // TODO: Using a callback to set the hero position is kind of hokey.
@@ -267,10 +296,13 @@ abstract class Content {
 
 /// Each call to [Game.update()] will return a [GameResult] object that tells
 /// the UI what happened during that update and what it needs to do.
+// 这是Update的返回值, 用于告诉UI应该绘制什么新的信息
 class GameResult {
   /// The "interesting" events that occurred in this update.
+  // 告诉UI发生了些什么
   final events = <Event>[];
 
+  // 等待Input的时候是完全静止的(不一定要学这个)
   /// Whether or not any game state has changed. If this is `false`, then no
   /// game processing has occurred (i.e. the game is stuck waiting for user
   /// input for the [Hero]).
@@ -280,6 +312,7 @@ class GameResult {
   /// should be shown to the user.
   bool get needsRefresh => madeProgress || events.isNotEmpty;
 
+  // 虚构造
   GameResult(this.madeProgress);
 }
 
@@ -301,6 +334,7 @@ class Event {
 
 // TODO: Move to content.
 /// A kind of [Event] that has occurred.
+// action回引发各种类型的event
 class EventType {
   static const pause = EventType("pause");
 
